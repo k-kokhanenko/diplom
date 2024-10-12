@@ -1,11 +1,12 @@
 import {Header} from '../Header/Header';
-import { useSelector } from 'react-redux';
+import { useSelector, useDispatch } from 'react-redux';
 import { useState, useEffect } from 'react';
-import { tab } from '@testing-library/user-event/dist/tab';
+//import { tab } from '@testing-library/user-event/dist/tab';
 
 export const HallConfiguration = (props) => {   
     const halls = useSelector(state => state.halls);
     const {maxRow, maxColumn} = props;
+    const dispatch = useDispatch();
 
     const [currentHall, setCurrentHall] = useState(() => {
         return localStorage.getItem("hall-currentHall") || 0;
@@ -19,11 +20,15 @@ export const HallConfiguration = (props) => {
           method : "GET",
         });
         const data = await response.json();
-        //console.log(data);        
-
+        
         setRow(halls[currentHall].row);
         setColumn(halls[currentHall].column);
         setSeats(data.seats);
+
+        //setRow(Object.keys(seats).length);
+        //setColumn(Object.keys(seats).length);
+
+        //console.log(Object.values(seats).length);        
     }
 
     const setData = async (hall, seats) => {
@@ -37,9 +42,14 @@ export const HallConfiguration = (props) => {
         const data = await response.json();
         if (data.result == true) {
             alert(data.message);
+
+            // Обновляем кол-во строк и столбцов в кинозале
+            let copy = Object.assign([], halls);
+            copy[currentHall].row = row;
+            copy[currentHall].column = column;
+            dispatch({type: "UPDATE", payload : copy});
         }
     }
-
 
     const handleChangeActiveHall = (e) => {
         if (currentHall != e.target.value) {
@@ -79,15 +89,19 @@ export const HallConfiguration = (props) => {
 
         setSeats(copy);
         setRow(Number(e.target.value));
+
+        //copy = Object.assign([], halls);
+        //copy[currentHall].row = Number(e.target.value);
+        //dispatch({type: "UPDATE", payload : copy});
     }
 
-    const handleOnChangeColumn = (e) => {
-        console.log(seats);
-
+    const handleOnChangeColumn = (e) => {        
         if (e.target.value < 1 || e.target.value > maxColumn) {
             alert(`Кол-во мест должно быть в диапазоне 1-${maxColumn}`);
             return;
         }
+
+        console.log(seats);
 
         let copy = Object.assign([], seats);
         if (e.target.value > column) {
@@ -108,6 +122,10 @@ export const HallConfiguration = (props) => {
 
         setSeats(copy);
         setColumn(Number(e.target.value));
+
+        //copy = Object.assign([], halls);
+        //copy[currentHall].column = Number(e.target.value);
+        //dispatch({type: "UPDATE", payload : copy});        
     }
 
     const showHallsItems = halls?.map(function(hall, index) {        

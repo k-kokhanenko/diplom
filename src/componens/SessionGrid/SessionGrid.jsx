@@ -133,7 +133,7 @@ export const SessionGrid = () => {
     
     const showHallsItems = halls?.map(function(hall, index) {        
         return <div className="conf-step__seances-hall" key={hall.id}>
-            <h3 className="conf-step__seances-title">{hall.name}-{hall.id}</h3>
+            <h3 className="conf-step__seances-title">{hall.name}</h3>
             <div className="conf-step__seances-timeline">
             {sessions?.map((session) =>           
                 <>
