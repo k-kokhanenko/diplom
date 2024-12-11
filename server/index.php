@@ -6,16 +6,6 @@ $response = json_encode([
 	'message' => 'Неизвестная ошибка'
 ]);	
 
-/*
-когда будут билеты уже добавлятья, то нельзя будет просто удалить кинозал 
-надо проверять будет эти моменты
-
-!!! нужна еще таблица сеансов
-
-!!! Загрузка изображений на сервер
-*/
-
-
 const LOGIN = 'ca89474_netology';
 const PASSWORD = 'SJa5YKRa';
 
@@ -110,13 +100,68 @@ if (!empty($_REQUEST['url']))
 		return [];
 	}
 
+	function getSessionFilmsInfo(string &$message) : array
+	{
+		$db = new PDO('mysql:dbname=ca89474_netology;host=localhost', LOGIN, PASSWORD);
+		$stmt = $db->prepare('SELECT * FROM films WHERE id IN (SELECT DISTINCT films_id FROM sessions)');
+		$stmt->execute();				
+		
+		if ($stmt->rowCount() > 0) {
+			$films = $stmt->fetchAll(PDO::FETCH_ASSOC);
+									
+			foreach ($films as &$film) {							
+				$stmt = $db->prepare('SELECT id, hall_id, begin_time FROM sessions WHERE films_id='.$film['id']);
+				$stmt->execute();				
+				if ($stmt->rowCount() > 0) {
+					$sessions = $stmt->fetchAll(PDO::FETCH_ASSOC);
+					
+					$halls = [];
+					foreach ($sessions as $session) {
+						if (!isset($halls[$session['hall_id']])) {
+							
+							$stmt = $db->prepare('SELECT name FROM cinema_hall WHERE id='.$session['hall_id']);
+							$stmt->execute();				
+							$hallName = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+							$halls[$session['hall_id']] = [
+								'name' => $hallName[0]['name'],
+								'beginTimes' => []
+							];							
+						}
+						
+						$halls[$session['hall_id']]['sessionsId'][] = substr($session['id'], 0, 5);
+						$halls[$session['hall_id']]['beginTimes'][] = substr($session['begin_time'], 0, 5);
+					}
+					
+					$film['halls'] = $halls;
+				}
+			}
+
+			return $films;
+		}			
+	}
+	
 	$path = parse_url($_REQUEST['url'], PHP_URL_PATH);
     $data = json_decode(file_get_contents('php://input'), true);
-
 
 	switch ($_SERVER['REQUEST_METHOD']) 
 	{		
 		case "POST":
+			/*if ($path == 'test/') {				
+				file_put_contents('log.txt', 'Передача formData'.PHP_EOL, FILE_APPEND);
+				file_put_contents('log.txt', print_r($_FILES, true).PHP_EOL, FILE_APPEND);
+				
+				if (!empty($_FILES['myFile'])) {
+					$file = $_FILES['attachment'];
+					$srcFileName = 'test.txt';//$file['name'];
+					$newFilePath = __DIR__ . '/images/' . $srcFileName;
+					
+					file_put_contents('log.txt', 'Путь до файла - '.$newFilePath.PHP_EOL, FILE_APPEND);
+					if (!move_uploaded_file($file['tmp_name'], $newFilePath)) {
+						file_put_contents('log.txt', 'Ошибка загрузки файла '.PHP_EOL, FILE_APPEND);
+					}
+				}
+			} else*/
 			if ($path == 'halls/') {	
 				if (isset($data['name']) && !empty($data['name'])) {
 					$db = new PDO('mysql:dbname=ca89474_netology;host=localhost', LOGIN, PASSWORD);
@@ -154,6 +199,58 @@ if (!empty($_REQUEST['url']))
 						'message' => 'Невозможно добавить новый кинозал, не передано название.',
 					]);					
 				}		
+			} else
+			if ($path == 'tickets/') {			
+				if (!empty($data['hallId']) && !empty($data['filmId']) && !empty($data['beginTime']) && !empty($data['selectedSeats']) && !empty($data['totalCost'])) {
+					// Определяем sessions_id
+					$db = new PDO('mysql:dbname=ca89474_netology;host=localhost', LOGIN, PASSWORD);
+					$stmt = $db->prepare('SELECT id FROM sessions WHERE films_id='.$data['filmId'].' AND hall_id='.$data['hallId'].' AND begin_time="'.$data['beginTime'].':00"');					
+					$stmt->execute();				
+					if ($stmt->rowCount() > 0) {
+						$session = $stmt->fetchAll(PDO::FETCH_ASSOC)[0];
+						
+						file_put_contents('log.txt', 'sessions_id - '.$session['id'].PHP_EOL, FILE_APPEND);
+						
+						// Создаем новый билет
+						$stmt = $db->prepare('INSERT INTO tickets (sessions_id, total_cost) VALUES (:sessions_id, :total_cost)');
+						$stmt->bindParam(':sessions_id', $session['id']);
+						$stmt->bindParam(':total_cost', $data['totalCost']);
+						if ($stmt->execute()) {
+							$ticketId = $db->lastInsertId();
+							
+							// Определяем seats_id
+							foreach($data['selectedSeats'] as $seat) {
+								$parts = explode('-', $seat);
+								
+								file_put_contents('log.txt', print_r($parts, true).PHP_EOL, FILE_APPEND);
+								
+								$stmt = $db->prepare('SELECT id FROM seats WHERE hall_id='.$data['hallId'].' AND row_num='.$parts[0].' AND column_num='.$parts[1]);					
+								$sql = 'SELECT id FROM sets WHERE hall_id='.$data['hallId'].' AND row_num='.$parts[0].' AND column_num='.$parts[1];
+								file_put_contents('log.txt', print_r($sql, true).PHP_EOL, FILE_APPEND);
+								$stmt->execute();				
+								if ($stmt->rowCount() > 0) {
+									$seat = $stmt->fetchAll(PDO::FETCH_ASSOC)[0];
+							
+									// Выбранное место сохраняем в таблице tickets_seats
+									$stmt = $db->prepare('INSERT INTO tickets_seats (seats_id, tickets_id) VALUES (:seats_id, :tickets_id)');
+									$stmt->bindParam(':seats_id', $seat['id']);
+									$stmt->bindParam(':tickets_id', $ticketId);
+									$stmt->execute();				
+								}
+							}
+							
+							$response = json_encode([
+								'result' => true,
+								'ticketId' => $ticketId,
+							]);																
+						}																
+					}										
+				} else {
+					$response = json_encode([
+						'result' => false,
+						'message' => 'Невозожно сохранить билеты, не переданы данные.',
+					]);						
+				}
 			} else
 			if ($path == 'films/') {	
 				if (isset($data['name']) && !empty($data['name']) && isset($data['duration']) && !empty($data['duration'])) {
@@ -318,7 +415,8 @@ if (!empty($_REQUEST['url']))
 			}				
 			break;		
 
-		case "GET":			
+		case "GET":		
+			$message = '';		
 			$parts = preg_split('@/@', $path, -1, PREG_SPLIT_NO_EMPTY);
 			if (count($parts) == 1 && $parts[0] == 'halls') {		
 				$response = json_encode([
@@ -338,8 +436,21 @@ if (!empty($_REQUEST['url']))
 					'sessions' => getElementsList('sessions'),
 				]);
 			} else
+			if (count($parts) == 1 && $parts[0] == 'sessionsFilms') {						
+				$filmsInfo = getSessionFilmsInfo($message);
+				if (count($filmsInfo)) {
+					$response = json_encode([
+						'result' => true, 
+						'filmsInfo' => $filmsInfo,
+					]);									
+				} else {
+					$response = json_encode([
+						'result' => false, 
+						'message' => $message
+					]);									
+				}				
+			} else				
 			if (count($parts) == 2 && $parts[0] == 'prices') {		
-				$message = '';
 				$price = getElementByHallId('prices', intval($parts[1]), $message);
 				if (count($price)) {
 					$response = json_encode([
@@ -354,7 +465,6 @@ if (!empty($_REQUEST['url']))
 				}				
 			} else
 			if (count($parts) == 2 && $parts[0] == 'seats') {		
-				$message = '';
 				$seats = getElementByHallId('seats', intval($parts[1]), $message);
 				if (count($seats)) {
 					$response = json_encode([
@@ -367,7 +477,87 @@ if (!empty($_REQUEST['url']))
 						'message' => $message
 					]);									
 				}				
-			} 
+			} else 
+			if (count($parts) == 3 && $parts[0] == 'seatsTickets') {		
+				// Получаем сетку с учетом купленных билетов
+				
+				// $parts[2] - sessionId
+				
+				$db = new PDO('mysql:dbname=ca89474_netology;host=localhost', LOGIN, PASSWORD);
+				$stmt = $db->prepare('SELECT * FROM cinema_hall WHERE id='.intval($parts[1]));
+				$stmt->execute();
+								
+				if ($stmt->rowCount() > 0) {	
+					$stmt = $db->prepare('SELECT * FROM seats WHERE hall_id='.intval($parts[1]));
+					$stmt->execute();
+				
+					if ($stmt->rowCount() > 0) {
+						$result = $stmt->fetchAll(PDO::FETCH_ASSOC);
+				
+						$paySeats = [];
+				
+						// Получаем список билетов, купленных на этот сеанс
+						$stmt = $db->prepare('SELECT id FROM tickets WHERE sessions_id='.intval($parts[2]));
+						$stmt->execute();
+						if ($stmt->rowCount() > 0) {	
+							$ticketsIdsList = '';
+							$ticketsIds = $stmt->fetchAll(PDO::FETCH_ASSOC);
+							foreach($ticketsIds as $ticketsId) {
+								$ticketsIdsList .= $ticketsId['id'].',';
+							}
+							$ticketsIdsList = rtrim($ticketsIdsList, ',');
+
+							//file_put_contents('log.txt', 'ticketsIdsList'.PHP_EOL, FILE_APPEND);
+							//file_put_contents('log.txt', print_r($ticketsIdsList, true).PHP_EOL, FILE_APPEND);
+																											
+													
+							// Получаем список мест купленных билетов
+							$stmt = $db->prepare('SELECT seats_id FROM tickets_seats WHERE tickets_id IN ('.$ticketsIdsList.')');
+							$stmt->execute();
+							if ($stmt->rowCount() > 0) {	
+								$seatsIds = $stmt->fetchAll(PDO::FETCH_ASSOC);
+								//file_put_contents('log.txt', 'seatsIds'.PHP_EOL, FILE_APPEND);
+								//file_put_contents('log.txt', print_r($seatsIds, true).PHP_EOL, FILE_APPEND);
+								
+								foreach($seatsIds as $seatsId) {
+									$paySeats[] = $seatsId['seats_id'];
+								}							
+							}														
+						}	
+
+						file_put_contents('log.txt', 'paySeats'.PHP_EOL, FILE_APPEND);
+						file_put_contents('log.txt', print_r($paySeats, true).PHP_EOL, FILE_APPEND);
+
+					
+						// Преобразуем массив в удобный вид для отображения seats[row][column] = type
+						$seats = [];
+						for ($i = 0; $i < count($result); $i++) {
+							$seat = $result[$i];
+							if (!isset($seats[$seat['row_num']])) {
+								$seats[$seat['row_num']] = [];
+							}
+							
+							// Проверяем нет ли этого места в купленных билетах
+							if (isset($paySeats) && in_array($seat['id'], $paySeats)) {
+								$seat['seat_type'] = 4;
+							}
+							
+							$seats[$seat['row_num']][$seat['column_num']] = $seat['seat_type']/*4*/;
+						}
+						
+						$response = json_encode([
+							'result' => true, 
+							'seats' => $seats,
+						]);									
+					}
+				} else {			
+					$response = json_encode([
+						'result' => false, 
+						'message' => 'Кинозала с таким id='. $id .' не существует.'
+					]);									
+				}							
+			}  				
+							
 			break;
 	
 		case "DELETE":
