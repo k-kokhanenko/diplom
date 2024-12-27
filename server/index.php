@@ -1,6 +1,5 @@
 <?php	
 
-
 $response = json_encode([
 	'result' => false, 
 	'message' => 'Неизвестная ошибка'
@@ -139,29 +138,26 @@ if (!empty($_REQUEST['url']))
 
 			return $films;
 		}			
+	}	
+
+	$path = parse_url($_REQUEST['url'], PHP_URL_PATH);
+	file_put_contents('log.txt', 'path = '.print_r($path, true).PHP_EOL, FILE_APPEND);							
+	
+	$data = [];
+	if (stripos($path, 'films') !== false) {
+		$data = $_POST;
+		$file = $_FILES['file'];
+		//file_put_contents('log.txt', print_r($file, true).PHP_EOL, FILE_APPEND);								
+		//file_put_contents('log.txt', print_r($_POST, true).PHP_EOL, FILE_APPEND);				
+	} else {
+		file_put_contents('log.txt', 'после разбора formData'.PHP_EOL, FILE_APPEND);			
+		$data = json_decode(file_get_contents('php://input'), true);
 	}
 	
-	$path = parse_url($_REQUEST['url'], PHP_URL_PATH);
-    $data = json_decode(file_get_contents('php://input'), true);
 
 	switch ($_SERVER['REQUEST_METHOD']) 
 	{		
 		case "POST":
-			/*if ($path == 'test/') {				
-				file_put_contents('log.txt', 'Передача formData'.PHP_EOL, FILE_APPEND);
-				file_put_contents('log.txt', print_r($_FILES, true).PHP_EOL, FILE_APPEND);
-				
-				if (!empty($_FILES['myFile'])) {
-					$file = $_FILES['attachment'];
-					$srcFileName = 'test.txt';//$file['name'];
-					$newFilePath = __DIR__ . '/images/' . $srcFileName;
-					
-					file_put_contents('log.txt', 'Путь до файла - '.$newFilePath.PHP_EOL, FILE_APPEND);
-					if (!move_uploaded_file($file['tmp_name'], $newFilePath)) {
-						file_put_contents('log.txt', 'Ошибка загрузки файла '.PHP_EOL, FILE_APPEND);
-					}
-				}
-			} else*/
 			if ($path == 'halls/') {	
 				if (isset($data['name']) && !empty($data['name'])) {
 					$db = new PDO('mysql:dbname=ca89474_netology;host=localhost', LOGIN, PASSWORD);
@@ -201,7 +197,7 @@ if (!empty($_REQUEST['url']))
 				}		
 			} else
 			if ($path == 'tickets/') {			
-				if (!empty($data['hallId']) && !empty($data['filmId']) && !empty($data['beginTime']) && !empty($data['selectedSeats']) && !empty($data['totalCost'])) {
+				if (!empty($data['hallId']) && !empty($data['filmId']) && !empty($data['beginTime']) && !empty($data['selectedSeats']) && !empty($data['totalCost'])/* && !empty($data['selectedDay'])*/) {
 					// Определяем sessions_id
 					$db = new PDO('mysql:dbname=ca89474_netology;host=localhost', LOGIN, PASSWORD);
 					$stmt = $db->prepare('SELECT id FROM sessions WHERE films_id='.$data['filmId'].' AND hall_id='.$data['hallId'].' AND begin_time="'.$data['beginTime'].':00"');					
@@ -209,20 +205,23 @@ if (!empty($_REQUEST['url']))
 					if ($stmt->rowCount() > 0) {
 						$session = $stmt->fetchAll(PDO::FETCH_ASSOC)[0];
 						
-						file_put_contents('log.txt', 'sessions_id - '.$session['id'].PHP_EOL, FILE_APPEND);
+						//file_put_contents('log.txt', 'sessions_id - '.$session['id'].PHP_EOL, FILE_APPEND);
 						
 						// Создаем новый билет
-						$stmt = $db->prepare('INSERT INTO tickets (sessions_id, total_cost) VALUES (:sessions_id, :total_cost)');
+						$stmt = $db->prepare('INSERT INTO tickets (sessions_id, date, total_cost) VALUES (:sessions_id, :date, :total_cost)');
 						$stmt->bindParam(':sessions_id', $session['id']);
-						$stmt->bindParam(':total_cost', $data['totalCost']);
+						$stmt->bindParam(':total_cost', $data['totalCost']);						
+
+						$ticketDate = date('Y-m-d', strtotime('+'.$data['selectedDay'].' days', time()));						
+						$stmt->bindParam(':date', $ticketDate);
+									
 						if ($stmt->execute()) {
 							$ticketId = $db->lastInsertId();
 							
 							// Определяем seats_id
 							foreach($data['selectedSeats'] as $seat) {
-								$parts = explode('-', $seat);
-								
-								file_put_contents('log.txt', print_r($parts, true).PHP_EOL, FILE_APPEND);
+								$parts = explode('-', $seat);								
+								//file_put_contents('log.txt', print_r($parts, true).PHP_EOL, FILE_APPEND);
 								
 								$stmt = $db->prepare('SELECT id FROM seats WHERE hall_id='.$data['hallId'].' AND row_num='.$parts[0].' AND column_num='.$parts[1]);					
 								$sql = 'SELECT id FROM sets WHERE hall_id='.$data['hallId'].' AND row_num='.$parts[0].' AND column_num='.$parts[1];
@@ -253,11 +252,24 @@ if (!empty($_REQUEST['url']))
 				}
 			} else
 			if ($path == 'films/') {	
-				if (isset($data['name']) && !empty($data['name']) && isset($data['duration']) && !empty($data['duration'])) {
+				if (!empty($data['name']) && !empty($data['duration']) && !empty($data['description']) && !empty($data['country'])) {											
+					$file = $_FILES['file'];
+					$uploadDirectory = 'images/';
+										
+					$extension = pathinfo(basename($file['name']), PATHINFO_EXTENSION);					
+					$filePath = $uploadDirectory . uniqid() . '.' . $extension;
+					move_uploaded_file($file['tmp_name'], $filePath);
+  							
 					$db = new PDO('mysql:dbname=ca89474_netology;host=localhost', LOGIN, PASSWORD);
-					$stmt = $db->prepare('INSERT INTO films (name, duration) VALUES (:name, :duration)');
+					$stmt = $db->prepare('INSERT INTO films (name, duration, description, country, images) VALUES (:name, :duration, :description, :country, :images)');
 					$stmt->bindParam(':name', $data['name']);
 					$stmt->bindParam(':duration', $data['duration']);
+					$stmt->bindParam(':description', $data['description']);
+					$stmt->bindParam(':country', $data['country']);
+					
+					$filePath = "http://phpsitechecker.ru/".$filePath;
+					$stmt->bindParam(':images', $filePath);
+					
 					if ($stmt->execute()) {
 						$filmId = $db->lastInsertId();						
 						$response = json_encode([
@@ -418,6 +430,9 @@ if (!empty($_REQUEST['url']))
 		case "GET":		
 			$message = '';		
 			$parts = preg_split('@/@', $path, -1, PREG_SPLIT_NO_EMPTY);
+			
+			
+			
 			if (count($parts) == 1 && $parts[0] == 'halls') {		
 				$response = json_encode([
 					'result' => true,
@@ -478,10 +493,15 @@ if (!empty($_REQUEST['url']))
 					]);									
 				}				
 			} else 
-			if (count($parts) == 3 && $parts[0] == 'seatsTickets') {		
-				// Получаем сетку с учетом купленных билетов
-				
+			if (count($parts) == 4 && $parts[0] == 'seatsTickets') {		
+		
+				file_put_contents('log.txt', print_r($parts, true).PHP_EOL, FILE_APPEND);							
+		
+			//if (count($parts) == 3 && $parts[0] == 'seatsTickets') {		
+				// Получаем сетку с учетом купленных билетов				
+				// $parts[1] - hallId
 				// $parts[2] - sessionId
+				// $parts[3] - days
 				
 				$db = new PDO('mysql:dbname=ca89474_netology;host=localhost', LOGIN, PASSWORD);
 				$stmt = $db->prepare('SELECT * FROM cinema_hall WHERE id='.intval($parts[1]));
@@ -496,8 +516,9 @@ if (!empty($_REQUEST['url']))
 				
 						$paySeats = [];
 				
-						// Получаем список билетов, купленных на этот сеанс
-						$stmt = $db->prepare('SELECT id FROM tickets WHERE sessions_id='.intval($parts[2]));
+						// Получаем список билетов, купленных на этот сеанс					
+						$days = date('Y-m-d', strtotime('+'.$parts[3].' days', time()));						
+						$stmt = $db->prepare('SELECT id FROM tickets WHERE sessions_id='.intval($parts[2]).' and date="'.$days.'"');
 						$stmt->execute();
 						if ($stmt->rowCount() > 0) {	
 							$ticketsIdsList = '';
@@ -508,8 +529,7 @@ if (!empty($_REQUEST['url']))
 							$ticketsIdsList = rtrim($ticketsIdsList, ',');
 
 							//file_put_contents('log.txt', 'ticketsIdsList'.PHP_EOL, FILE_APPEND);
-							//file_put_contents('log.txt', print_r($ticketsIdsList, true).PHP_EOL, FILE_APPEND);
-																											
+							//file_put_contents('log.txt', print_r($ticketsIdsList, true).PHP_EOL, FILE_APPEND);																							
 													
 							// Получаем список мест купленных билетов
 							$stmt = $db->prepare('SELECT seats_id FROM tickets_seats WHERE tickets_id IN ('.$ticketsIdsList.')');
