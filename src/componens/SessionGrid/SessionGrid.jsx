@@ -10,22 +10,24 @@ export const SessionGrid = () => {
     const [hallId, setHallId] = useState(0);
     const [filmId, setFilmId] = useState(0);
     const [beginTime, setBeginTime] = useState('00:00');
-
-
+    const [selectedFile, setSelectedFile] = useState(null);
+    
     const [films, setFilms] = useState([]);
     const [sessions, setSessions] = useState([]);
     const halls = useSelector(state => state.halls);
     
     const inputName = useRef();
+    const inputDescription = useRef();
+    const inputCountry = useRef();    
     const inputDuration = useRef(); 
 
-    const addNewFilm = async (name, duration) => {
+    const addNewFilm = async (name, duration, description, country, formData) => {
         const response = await fetch(`http://phpsitechecker.ru/films/`, {
           method : "POST",
-          headers: {
+          /*headers: {
             'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({ name, duration })
+          },*/
+          body: formData/*JSON.stringify({ name, duration, description, country, formData })*/
         });
         const data = await response.json();
         if (!data.result) {
@@ -60,7 +62,7 @@ export const SessionGrid = () => {
         });
         const data = await response.json();
         if (!data.result) {
-            console.log(`Ошибка выполнения запроса addFilmToSession: ${data.message}`);
+            //console.log(`Ошибка выполнения запроса addFilmToSession: ${data.message}`);
             alert(data.message);
         } else {            
             setOpenNewSession(false);
@@ -86,18 +88,34 @@ export const SessionGrid = () => {
         if (data.result) {
             setSessions(data.sessions);            
         } else {
-            console.log(`Ошибка выполнения запроса getSessions: ${data.message}`);
+            //console.log(`Ошибка выполнения запроса getSessions: ${data.message}`);
         }
     }    
 
     const handleOnAddFilm = (e) => {
         // Проверяем дилтельность фильма
         if (inputDuration.current.value > 240) {
-            alert('Фильм не может быть дилтеьностью больше 4 часов!');
+            alert('Фильм не может быть длительностью больше 4 часов!');
             return;
         }
 
-        addNewFilm(inputName.current.value, inputDuration.current.value);        
+        let formData = new FormData();
+        formData.append("file", selectedFile);        
+        formData.append("name", inputName.current.value);        
+        formData.append("duration", inputDuration.current.value);        
+        formData.append("description", inputDescription.current.value);        
+        formData.append("country", inputCountry.current.value);        
+
+        console.log(selectedFile); 
+        console.log(formData); 
+
+        addNewFilm(
+            inputName.current.value, 
+            inputDuration.current.value,
+            inputDescription.current.value,
+            inputCountry.current.value,
+            formData
+        );        
     }
 
     const handleOnSelectFilm = (id) => {
@@ -119,8 +137,8 @@ export const SessionGrid = () => {
     }
 
     const showFilmsItems = films?.map(function(film, index) {        
-        return <div className="conf-step__movie" key={film.id} onClick={() => handleOnSelectFilm(film.id)} title="Нажмите, чтобы добавить фильм в сетку сеансов">
-            <img className="conf-step__movie-poster" alt="poster" src="i/poster.png"/>
+        return <div className="conf-step__movie" key={index} onClick={() => handleOnSelectFilm(film.id)} title="Нажмите, чтобы добавить фильм в сетку сеансов">
+            <img className="conf-step__movie-poster" alt="poster" src={film.images}/>
             <h3 className="conf-step__movie-title">{film.name}</h3>
             <p className="conf-step__movie-duration">{film.duration} минут</p>
         </div>;
@@ -139,6 +157,7 @@ export const SessionGrid = () => {
                 <>
                     {session.hall_id == hall.id && 
                         <div 
+                            key={session.films_id}
                             className="conf-step__seances-movie"  title={`Нажмите, чтобы удалить фильм '${getFilmNameById(session.films_id)}' из сетки сеансов`}
                             style={{width: `${session.duration/2}px`, backgroundColor: "rgb(133, 255, 137)", left: `${getLeftPosition(session.begin_time)}px`}}
                             onClick={() => handleOnDeleteFilmFromSessions(session.id)}
@@ -168,6 +187,10 @@ export const SessionGrid = () => {
         getSessions();
     }, []);    
 
+    const onFileChange = (event) => {
+        setSelectedFile(event.target.files[0]);
+    };
+
     return (
         <>    
             <section className="conf-step">
@@ -186,21 +209,36 @@ export const SessionGrid = () => {
                 </div>
                 <Modal open={openNewFilm} onClose={() => setOpenNewFilm(false)}>
                     <section className="login">
-                    <header className="login__header">
-                        <h2 className="login__title">Добавить фильм</h2>
-                    </header>
-                    <div className="login__wrapper login__form">
-                        <label className="login__label" htmlFor="name">
-                            Название фильма
-                            <input className="login__input" type="text" ref={inputName} placeholder="Укажите название фильма" name="name" required/>
-                        </label>
-                        <label className="login__label" htmlFor="duration">
-                            Длительность (минут)
-                            <input className="login__input" type="number" ref={inputDuration} placeholder="Укажите длительность фильма" name="duration" required/>
-                        </label>
+                        <header className="login__header">
+                            <h2 className="login__title">Добавить фильм</h2>
+                        </header>
 
-                        <button className="conf-step__button conf-step__button-accent" onClick={handleOnAddFilm}>Создать</button>
-                    </div>
+                        <form className="login__wrapper login__form">
+                            <label className="login__label" htmlFor="name">
+                                Название фильма
+                                <input className="login__input" type="text" ref={inputName} placeholder="Укажите название фильма" name="name" required/>
+                            </label>
+
+                            <label className="login__label" htmlFor="decription">
+                                Описание фильма
+                                <input className="login__input" type="text" ref={inputDescription} placeholder="Укажите описание фильма" name="decription" required/>
+                            </label>
+                            <label className="login__label" htmlFor="country">
+                                Страна производитель
+                                <input className="login__input" type="text" ref={inputCountry} placeholder="Укажите страну производителя" name="country" required/>
+                            </label>
+
+                            <label className="login__label" htmlFor="duration">
+                                Длительность (минут)
+                                <input className="login__input" type="number" ref={inputDuration} placeholder="Укажите длительность фильма" name="duration" required/>
+                            </label>
+
+                            <div>
+                                <input type="file" onChange={onFileChange} />
+                            </div>
+
+                            <button className="conf-step__button conf-step__button-accent" onClick={handleOnAddFilm}>Создать</button>
+                        </form>
                     </section>
                 </Modal>  
                 <Modal open={openNewSession} onClose={() => setOpenNewSession(false)}>
