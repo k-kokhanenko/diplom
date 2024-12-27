@@ -121,11 +121,7 @@ export const HallConfiguration = (props) => {
         }
 
         setSeats(copy);
-        setColumn(Number(e.target.value));
-
-        //copy = Object.assign([], halls);
-        //copy[currentHall].column = Number(e.target.value);
-        //dispatch({type: "UPDATE", payload : copy});        
+        setColumn(Number(e.target.value));     
     }
 
     const showHallsItems = halls?.map(function(hall, index) {        
